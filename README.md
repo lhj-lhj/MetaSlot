@@ -34,10 +34,3 @@ MetaSlot is designed to be modular and compatible with most existing object-cent
 > The citation will be updated after paper acceptance. For now, please refer to the anonymous project page.
 
 ---
-
-## 🔗 Anonymous Link
-
-> This repository is part of a blind submission for review.  
-> An anonymous version is available at: [**https://anonymous.4open.science/r/metaslot-nips2025-xxxx/**](https://anonymous.4open.science) *(link to be generated)*
-
----
