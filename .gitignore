@@ -1,0 +1,79 @@
+# -------------------------------
+# Python
+# -------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+*.tmp
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+*.env
+
+# -------------------------------
+# PyTorch / ML
+# -------------------------------
+# Model checkpoints
+*.ckpt
+*.pth
+*.pt
+*.onnx
+
+# Training logs / outputs
+logs/
+wandb/
+lightning_logs/
+events.out.tfevents.*
+
+# Datasets / large files
+data/
+*.npz
+*.npy
+*.h5
+*.zarr
+*.lmdb
+!logs/.gitkeep
+
+# -------------------------------
+# IDE / Editors
+# -------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+
+# -------------------------------
+# OS files
+# -------------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------------
+# Build / Packaging
+# -------------------------------
+build/
+dist/
+*.egg-info/
+.eggs/
