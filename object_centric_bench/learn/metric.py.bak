@@ -1,0 +1,438 @@
+import statistics
+
+from scipy.optimize import linear_sum_assignment
+import lpips
+import numpy as np
+import torch as pt
+import torch.nn as nn
+import torch.nn.functional as ptnf
+
+
+class MetricWrap:
+    """"""
+
+    def __init__(self, detach=False, **metrics):
+        self.detach = detach
+        self.metrics = metrics
+
+    def __call__(self, output: dict, batch: dict) -> dict:
+        metrics = {}
+        for key, value in self.metrics.items():
+            # assert "map" in value
+            kwds = {
+                **{k: output[v] for k, v in value["map"]["output"].items()},
+                **{k: batch[v] for k, v in value["map"]["batch"].items()},
+            }
+            if self.detach:
+                kwds = {k: v.detach() for k, v in kwds.items()}  # cpu: slow
+            if "transform" in value:
+                kwds = value["transform"](**kwds)
+            # assert "metric" in value
+            metric = value["metric"](**kwds)
+            if "weight" in value:
+                metric = metric * value["weight"]
+            metrics[key] = metric
+        return metrics
+
+
+class CrossEntropyLoss:
+    """Based on ``nn.CrossEntropyLoss``. Tensors are in shape (b,c,..)."""
+
+    def __init__(self, weight=None, reduce="mean"):
+        self.weight = weight
+        self.reduce = reduce
+
+    def __call__(self, input, target):
+        return ptnf.cross_entropy(input, target, self.weight, reduction=self.reduce)
+
+
+class CrossEntropyLossGrouped(CrossEntropyLoss):
+    """Assume input and target are both one hot, and in shape (b,c,...)."""
+
+    def __init__(self, groups, weight=None, reduce="mean"):
+        super().__init__(weight, reduce)
+        self.groups = groups
+
+    def __call__(self, input, target):
+        """
+        target: class indexes of tuple (groups is None) or one-hot format in shape (b,g,h,w)
+        """
+        assert input.ndim == target.ndim
+        start = 0
+        loss = []
+        for gc in self.groups or range(target.size(1)):
+            end = start + gc
+            ce = super().__call__(input[:, start:end], target[:, start:end])
+            start = end
+            loss.append(ce)
+        # assert end == input.size(1)
+        return sum(loss)
+
+
+class HungarianCrossEntropyLoss:
+
+    def __init__(self, max_num, fg=False, normaliz=False):
+        self.max_num = max_num
+        assert fg is False
+        self.fg = fg
+        assert normaliz is False
+        self.normaliz = normaliz
+
+    def __call__(self, input, target):
+        """
+        input: in shape (b,c,..)
+        target: in shape (b,..)
+        """
+        assert input.ndim > 2 and target.ndim > 1 and input.ndim == target.ndim + 1
+        input = input.flatten(2)  # (b,c,n)
+        n = input.size(2)
+        idxs_pd = input.argmax(1)  # (b,n)
+        idxs_gt = target.flatten(1)  # (b,n)
+
+        oh_pd = ptnf.one_hot(idxs_pd.long(), self.max_num).bool()  # (b,n,c)
+        oh_gt = ptnf.one_hot(idxs_gt.long(), self.max_num).bool()  # (b,n,c)
+        if self.fg:
+            oh_gt = oh_gt[..., 1:]  # suppose 0 is bg
+
+        match = __class__.hungarian_match_by_iou(oh_pd, oh_gt)  # (b,2,c)
+        input0 = input.gather(1, match[:, 0, :, None].expand(-1, -1, n))  # (b,c,n)
+        target0 = (
+            oh_gt.gather(2, match[:, 1, None, :].expand(-1, n, -1))
+            .permute(0, 2, 1)
+            .to(input0.dtype)
+        )  # (b,c,n)
+
+        if self.normaliz:  # TODO
+            weight = ...
+
+        loss = ptnf.cross_entropy(input0, target0)
+        return loss
+
+    @pt.no_grad()
+    @staticmethod
+    def hungarian_match_by_iou(oh_pd, oh_gt):
+        """
+        oh_pd: in shape (b,n,c), bool
+        oh_gt: in shape (b,n,d), bool
+        return: in shape (b,c,d), long
+        """
+        assert oh_pd.ndim == oh_gt.ndim == 3
+        assert oh_pd.dtype == oh_gt.dtype == pt.bool
+        c, d = oh_pd.size(2), oh_gt.size(2)
+
+        intersect = (oh_gt[:, :, :, None] & oh_pd[:, :, None, :]).sum(1)  # (b,c,d)
+        union = oh_gt.sum(1)[:, :, None] + oh_pd.sum(1)[:, None, :] - intersect
+        iou = intersect.float() / (union.float() + 1e-8)
+
+        match = []
+        for _ in iou.detach().cpu().numpy():  # (c,d)
+            row_ind, col_ind = linear_sum_assignment(_, maximize=True)
+            match.append([row_ind, col_ind])
+
+        match = pt.tensor(np.array(match), device=oh_pd.device)
+        return match
+
+        # there are two possibilities here
+        #   1. M >= N, just take the best match mean
+        #   2. M < N, some objects are not detected, their iou is 0
+        if c >= d:
+            assert (row_ind == np.arange(d)).all()
+            return iou[row_ind, col_ind].mean()
+        return iou[row_ind, col_ind].sum() / float(d)
+
+
+class Entropy:
+
+    def __init__(self, dim=1, binariz=True, reduce="mean"):
+        assert dim == 1
+        assert reduce == "mean"
+        self.dim = dim
+        self.binariz = binariz
+
+    def __call__(self, input):
+        if self.binariz:
+            idx = input.argmax(1, keepdim=True)
+            input = pt.zeros_like(input).scatter_(1, idx, 1.0) + input - input.detach()
+        x = input.mean((0, 2, 3))
+        x = x.softmax(0)  # , x.dtype
+        return __class__.entropy(x, 0)
+
+    @staticmethod
+    def entropy(prob, dim):
+        return -(prob * prob.log2()).sum(dim)
+
+
+class EntropyGrouped(Entropy):
+
+    def __init__(self, groups, dim=1, binariz=True, reduce="mean"):
+        super().__init__(dim, binariz, reduce)
+        self.groups = groups
+
+    def __call__(self, input):
+        ent = []
+        start = 0
+        for g in self.groups:
+            end = start + g
+            array_g = input[:, start:end, :, :]
+            start = end
+            ent_g = super().__call__(array_g)
+            ent.append(ent_g)  # remove the coefficient
+            # ent.append(ent_g * (g / sum(self.groups)))
+        assert end == input.size(1)
+        return sum(ent)
+
+
+class CosineSimilarity:
+
+    def __init__(self, dim, pattern, reduce="mean"):
+        self.dim = dim
+        self.pattern = pattern
+        assert reduce == "mean"
+
+    def __call__(self, input):
+        x = input / pt.norm(input, p=2, dim=self.dim, keepdim=True, dtype=input.dtype)
+        prod = pt.einsum(self.pattern, x, x)
+        return prod.mean()
+
+
+class CodebookCosineSimilarity:
+
+    def __call__(self, input):
+        if isinstance(input, nn.ModuleList):
+            simis = [
+                __class__.calculate_codebook_cosine_similarity(_.weight) for _ in input
+            ]
+            loss = sum(simis) / len(input)
+        else:
+            raise "NotImplemented"
+        return loss
+
+    @staticmethod
+    def calculate_codebook_cosine_similarity(x):
+        x = x / pt.norm(x, p=2, dim=1, keepdim=True, dtype=x.dtype)
+        return pt.einsum("nc,mc->nm", x, x).mean()
+
+
+class UtilizLoss:
+    """Maximize VAE codebook utilization."""
+
+    def __init__(self, normaliz=True, binariz=True):
+        self.normaliz = normaliz
+        self.binariz = binariz
+
+    def __call__(self, input):  # target=None
+        """
+        input: in shape (b,c,h,w)
+        """
+        if self.normaliz:
+            input = input.softmax(1)  # , input.dtype
+        if self.binariz:
+            idx = input.argmax(1, keepdim=True)
+            input = pt.zeros_like(input).scatter_(1, idx, 1.0) + input - input.detach()
+        x = input.mean((0, 2, 3))
+        if self.normaliz:  # coefficient of variance
+            cv = x.std(0) * x.size(0)
+        else:
+            cv = x.std(0) / x.mean(0)
+        return cv
+
+
+class UtilizLossGrouped(UtilizLoss):
+
+    def __init__(self, groups, normaliz=True, binariz=True):
+        super().__init__(normaliz, binariz)
+        self.groups = groups
+
+    def __call__(self, input):
+        d = input.size(1) // sum(self.groups)
+        start = 0
+        loss = []
+        for g in self.groups:
+            end = start + g * d
+            array_g = input[:, start:end, :, :].unflatten(1, [g, d]).mean(2)
+            cvm = super().__call__(array_g)
+            start = end
+            loss.append(cvm * (g / sum(self.groups)))
+        assert end == input.size(1)
+        return sum(loss)  # / len(self.groups)
+
+
+class L1Loss:
+    """Based on ``nn.L1Loss``."""
+
+    def __init__(self, reduce="mean"):
+        self.reduce = reduce
+
+    def __call__(self, input, target=None):
+        if target is None:
+            target = pt.zeros_like(input)
+        return ptnf.l1_loss(input, target, reduction=self.reduce)
+
+
+class MSELoss:
+    """Based on ``nn.MSELoss``."""
+
+    def __init__(self, reduce="mean"):
+        self.reduce = reduce
+
+    def __call__(self, input, target):
+        return ptnf.mse_loss(input, target, reduction=self.reduce)
+
+
+class HuberLoss:
+    """Based on ``nn.HuberLoss``."""
+
+    def __init__(self, reduce="mean", delta=1.0):
+        self.reduce = reduce
+        self.delta = delta
+
+    def __call__(self, input, target):
+        return ptnf.huber_loss(input, target, reduction=self.reduce)
+
+
+class KLDivLoss:
+    """Based on ``nn.KLDivLoss``."""
+
+    def __init__(self, reduce="mean", log_target=False):
+        self.reduce = reduce
+        self.log_target = log_target
+
+    def __call__(self, input, target):
+        return ptnf.kl_div(
+            input, target, reduction=self.reduce, log_target=self.log_target
+        )
+
+
+class LPIPSLoss:
+    """``lpips.LPIPS``"""
+
+    def __init__(self, net="vgg", reduce="mean", stop_amp=True):
+        assert reduce == "mean"
+        self.lpips = lpips.LPIPS(pretrained=True, net=net, eval_mode=True)
+        for p in self.lpips.parameters():
+            p.requires_grad = False
+        self.lpips.compile()
+        # self.lpips = pt.quantization.quantize_dynamic(self.lpips)  # slow
+        self.stop_amp = stop_amp
+
+    @pt.autocast("cuda", pt.float, enabled=False)
+    def __call__(self, input, target):
+        self.lpips.to(input.device)  # to the same device, won't repeat once done
+        return self.lpips(target, input.float()).mean()
+
+
+class ARI:
+    """Assume input and target in shape (b,t1,t2,..s1,s2,..) without channel,
+        where t1,t2,.. are dims to keep, and s1,s2.. are dims to flatten.
+    https://scikit-learn.org/stable/modules/generated/sklearn.metrics.adjusted_rand_score.html
+    Note: The larger num_pd and num_gt, the "better" ari will be, especially arifg.
+    """
+
+    def __init__(self, num_pd, num_gt, flatten=None, fg=False, reduce="mean"):
+        self.num_pd = num_pd
+        self.num_gt = num_gt
+        self.fg = fg
+        self.flatten_from = flatten
+        assert reduce in ["mean", "mean_batch_only"]
+        self.reduce = reduce
+
+    @pt.no_grad()
+    def __call__(self, input, target):
+        if self.flatten_from:
+            input = input.flatten(self.flatten_from)
+            target = target.flatten(self.flatten_from)
+        if self.reduce == "mean_batch_only":
+            keepdim = input.shape[1:-1]
+        input = input.flatten(0, -2)
+        target = target.flatten(0, -2)
+        acc = __class__.adjusted_rand_score(
+            input, target, self.num_pd, self.num_gt, self.fg
+        )
+        if self.reduce == "mean_batch_only":
+            acc = acc.view(-1, *keepdim)
+        return acc.mean(0)  # (b,) or (b,t1,t2,..)
+
+    @staticmethod
+    def adjusted_rand_score(idxs_pd, idxs_gt, num_pd, num_gt, fg=False):
+        """batch operation, keep the batch dimension
+
+        idxs_pd: segment mask prediction in shape (b,n)
+        idxs_gt: segment mask ground-truth in shape (b,n)
+        """
+        assert not idxs_pd.is_floating_point()  # TODO move this out like hungarian
+        assert not idxs_gt.is_floating_point()
+        assert idxs_pd.ndim == idxs_gt.ndim == 2
+        assert num_pd < 256 and num_gt < 256
+
+        oh_pd = ptnf.one_hot(idxs_pd.long(), num_pd).bool()  # (b,n,c)
+        oh_gt = ptnf.one_hot(idxs_gt.long(), num_gt).bool()  # (b,n,c)
+        if fg:
+            oh_gt = oh_gt[:, :, 1:]  # remove background
+
+        # the following two impls: 1:4@cpu; 3:0.3@gpu
+        # einsum("bnc,bnd->bcd", oh_gt.double(), oh_pr.double())
+        N = (oh_gt[:, :, :, None] & oh_pd[:, :, None, :]).sum(1)  # (b,c,c-1)
+        A = N.int().sum(2)  # (b,c), long
+        B = N.int().sum(1)  # (b,c-1)
+        num = A.int().sum(1)  # (b,)
+
+        idx_r = (N * (N - 1)).sum([1, 2])  # (b,)
+        idx_a = (A * (A - 1)).sum(1)  # (b,)
+        idx_b = (B * (B - 1)).sum(1)  # (b,)
+        idx_n = (num * (num - 1)).clip(1)  # (b,)
+
+        idx_r_exp = (idx_a * idx_b).float() / idx_n.float()
+        idx_r_max = (idx_a + idx_b).float() / 2.0
+        denominat = idx_r_max - idx_r_exp
+        ari = (idx_r.float() - idx_r_exp) / denominat
+
+        # the denominator can be zero:
+        # - both pd & gt idxs assign all pixels to one cluster
+        # - both pd & gt idxs assign max 1 point to each cluster
+        ari.masked_fill_(denominat == 0, 1)
+        return ari
+
+
+class FgIoU:
+    """Assume input and target in shape (b,t1,t2,..,s1,s2,..) without channel,
+        where t1,t2,.. are dims to keep and s1,s2,.. are dims to flatten.
+    The maximum element value must be 1."""
+
+    def __init__(self, flatten=None, reduce="mean"):
+        self.flatten_from = flatten
+        assert reduce in ["mean", "mean_batch_only"]
+        self.reduce = reduce
+
+    @pt.no_grad()
+    def __call__(self, input, target):
+        if self.flatten_from:
+            input = input.flatten(self.flatten_from)
+            target = target.flatten(self.flatten_from)
+        if self.reduce == "mean_batch_only":
+            keepdim = input.shape[1:-1]
+        input = input.flatten(0, -2)
+        target = target.flatten(0, -2)
+        iou = __class__.fg_iou(input, target)
+        if self.reduce == "mean_batch_only":
+            iou = iou.view(-1, *keepdim)
+        return iou.mean(0)  # (b,) or (b,t1,t2,..)
+
+    @staticmethod
+    def fg_iou(input, target):
+        assert not input.is_floating_point()
+        assert not target.is_floating_point()
+        input = input.bool()
+        target = target.bool()
+        iou1 = __class__.intersection_over_union(input, target)
+        iou2 = __class__.intersection_over_union(~input, target)
+        return pt.where(iou1 > iou2, iou1, iou2)
+
+    @staticmethod
+    def intersection_over_union(input: pt.bool, target: pt.bool, eps=1e-5):
+        """
+        input: in shape (b,n)
+        target: in shape (b,n)
+        """
+        intersect = (input & target).sum(1)
+        union = (input | target).sum(1)
+        return intersect.float() / (union.float() + eps)  # (b,)

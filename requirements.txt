@@ -1,0 +1,17 @@
+av #==14.1.0  # pyav
+clu==0.0.11
+diffusers #==0.32.2
+einops #==0.8.1
+lmdb #==1.6.2
+lpips #==0.1.4
+numpy #==2.2.5
+opencv_python #==4.11.0.86
+# git+https://github.com/facebookresearch/sam2.git  # may take a lot of time
+scipy #==1.15.3
+# tensorflow #==2.19.0
+# tensorflow_datasets #==4.9.7
+timm #==1.0.15
+torch #==2.6.0+cu126
+torchvision #==0.21.0+cu126
+tqdm #==4.67.1
+zstd #==1.5.6.2
