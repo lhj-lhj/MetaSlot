@@ -48,13 +48,14 @@ lightning_logs/
 events.out.tfevents.*
 
 # Datasets / large files
-data/
+data/*
+!data/.gitkeep
 *.npz
 *.npy
 *.h5
 *.zarr
 *.lmdb
-!logs/.gitkeep
+!.gitkeep
 
 # -------------------------------
 # IDE / Editors

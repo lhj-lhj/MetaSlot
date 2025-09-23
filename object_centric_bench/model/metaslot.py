@@ -123,9 +123,6 @@ class MetaSlot(nn.Module):
                 q, a = self.step(q, k, v, smask)
             else:
                 q_d, a = self.step(q_d, k, v, smask)
-        # k,v = self.noisy(kv, 0, self_num_iter)       
-        # q = q_d + query - query.detach()
-        # q, a = self.step(q, k, v, smask)
 
         slots_vq_2, zidx_slots_2 = self.vq.update_codebook(q.detach(), smask=smask)
         

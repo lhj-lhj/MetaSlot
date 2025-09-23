@@ -15,7 +15,6 @@ from .utils import (
     draw_segmentation_np,
 )
 
-
 class MSCOCO(ptud.Dataset):
     """
     Common Objects in COntext  https://cocodataset.org

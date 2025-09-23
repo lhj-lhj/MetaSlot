@@ -29,7 +29,6 @@ from .basic import (
     Identity,
     DINO2ViT,
     DINO2ViT_P16,
-    SAM2Hiera,
     EncoderVAESD,
     DecoderVAESD,
     EncoderTAESD,
@@ -61,8 +60,6 @@ from .slotdiffusion import (
 from .spot import SPOT, SPOTDistill, AR9TransformerDecoder, ARRandTransformerDecoder
 from .spot_zero import SPOTZero  # TODO XXX
 from .vaez import VQVAEZ, QuantiZ, VQVAEZGrouped, VQVAEZMultiScale, LinearPinv
-from .vqvfmocl import VVOTfd, VVOTfdT, VVOMlp, VVOMlpT, VVODfz, VVODfzT, VVOSmdT
 from .slotformer import SlotFormer, Rollouter, RelationNetwork
-from .initq import InitqDINOSAUR, TwoWayTransformer
 
 [register_module(_) for _ in locals().values() if isinstance(_, type)]

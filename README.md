@@ -62,6 +62,8 @@ Converted datasets, including ClevrTex, COCO, VOC and MOVi-D are available as [r
 ### 1. Install dependencies  
 
 ```bash
+conda create -n MetaSlot python=3.10
+conda activate MetaSlot
 pip install -r requirements.txt
 ````
 

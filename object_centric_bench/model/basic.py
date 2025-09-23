@@ -11,10 +11,6 @@ import torch.nn as nn
 import torch.nn.functional as ptnf
 import numpy as np
 
-
-####
-
-
 class ModelWrap(nn.Module):
 
     def __init__(self, m: nn.Module, imap, omap):
@@ -636,66 +632,6 @@ class DINO2ViT(nn.Module):
             feature = feature[:, self.num_prefix_tokens :, :]  # remove class token
             feature = rearrange(feature, "b (h w) c -> b c h w", h=self.out_size)
         return feature  # .clone()
-
-
-class SAM2Hiera(nn.Module):
-    """Heira backbone + FPN neck in SAM2
-    https://github.com/facebookresearch/sam2
-    """
-
-    ARCHS = {
-        "sam2.1_hiera_tiny": dict(
-            cfg_name="configs/sam2.1/sam2.1_hiera_t.yaml",
-            ckpt_url="https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
-        ),
-        "sam2.1_hiera_small": dict(
-            cfg_name="configs/sam2.1/sam2.1_hiera_s.yaml",
-            ckpt_url="https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
-        ),
-        "sam2.1_hiera_base_plus": dict(
-            cfg_name="configs/sam2.1/sam2.1_hiera_b+.yaml",
-            ckpt_url="https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
-        ),
-        "sam2.1_hiera_large": dict(
-            cfg_name="configs/sam2.1/sam2.1_hiera_l.yaml",
-            ckpt_url="https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
-        ),
-    }
-
-    def __init__(self, model_name="sam2.1_hiera_tiny", which=2, nb=0):
-        super().__init__()
-        from pathlib import Path
-        from sam2.build_sam import build_sam2
-        import sam2
-
-        cfg_file = Path(sam2.__file__).parent / __class__.ARCHS[model_name]["cfg_name"]
-        ckpt_file = Path(pt.hub.get_dir()) / f"{model_name}.pt"
-        if not ckpt_file.exists():
-            pt.hub.download_url_to_file(
-                __class__.ARCHS[model_name]["ckpt_url"], ckpt_file
-            )
-            print(f"``{model_name}`` is downloaded to local ``{ckpt_file}``")
-
-        sam2 = build_sam2(
-            config_file="/" + str(cfg_file), ckpt_path=ckpt_file, device="cpu"
-        )
-        self.hiera = sam2.image_encoder.trunk
-        if nb > 0:  # removing last pool for dx16 causes grid effect
-            self.hiera.blocks = self.hiera.blocks[:nb]  # use nb=10 for dx16
-        if not nb > 0:
-            self.fpn = sam2.image_encoder.neck
-        self.which = which  # pick which scale: [dx=4, 8, 16, 32]
-
-    @pt._dynamo.disable()  # compile causes nan grad, in whatever mode
-    def forward(self, input):
-        with pt.inference_mode():
-            if hasattr(self, "fpn"):
-                features, posits = self.fpn(self.hiera(input))
-                assert len(features) == 4
-            else:
-                features = self.hiera(input)
-        return features[self.which].clone()  # clone for backward  # dx=16
-
 
 class EncoderVAESD(nn.Sequential):
     """https://huggingface.co/stabilityai/sd-vae-ft-mse"""
