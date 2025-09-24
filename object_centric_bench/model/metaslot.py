@@ -13,7 +13,7 @@ class MetaSlot(nn.Module):
     def __init__(
         self, num_iter, embed_dim, ffn_dim, dropout=0, kv_dim=None, trunc_bp=None, codebook_size = 512, \
             clust_prob: float = 0.02, buffer_capacity = 672, vq_std=1.0, vq_type='kmeans', \
-            if_noise = True, if_mask = True, if_proto = True, if_downstream = False, timeout = 2048
+            if_noise = True, if_mask = True, if_proto = True, if_downstream = False, timeout = 4096
     ):
         """
         - dropout: only works in self.ffn; a bit is beneficial

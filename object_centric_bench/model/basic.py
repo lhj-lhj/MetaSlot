@@ -585,7 +585,7 @@ class DINO2ViT(nn.Module):
         self.patch_size = model.patch_embed.patch_size[0]
         
         # print("patch_size:", self.patch_size)
-        assert self.patch_size == 14
+        assert self.patch_size == 14 or self.patch_size == 16
 
         self.cls_token = model.cls_token
         self.reg_token = model.reg_token
@@ -619,7 +619,7 @@ class DINO2ViT(nn.Module):
 
         self.rearrange = rearrange
         self.out_size = in_size // self.patch_size
-        assert self.out_size <= 518 // 14
+        # assert self.out_size <= 518 // 14
 
     def forward(self, input):
         """
