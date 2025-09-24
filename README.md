@@ -59,7 +59,7 @@ Converted datasets, including ClevrTex, COCO, VOC and MOVi-D are available as [r
 
 ## 🚀 Getting Started  
 
-### 1. Install dependencies  
+### Install dependencies  
 
 ```bash
 conda create -n MetaSlot python=3.10
@@ -67,7 +67,9 @@ conda activate MetaSlot
 pip install -r requirements.txt
 ````
 
-### 2. Training with DINOSAUR + MetaSlot
+## 🏋️ Train
+
+### 1. Training with DINOSAUR + MetaSlot
 
 ```bash
 python train.py \
@@ -75,7 +77,7 @@ python train.py \
     --cfg_file ./Config/config-metaslot/dinosaur_r-voc.py
 ```
 
-### 3. Training SlotDiffusion + MetaSlot (requires VQ-VAE pretraining)
+### 2. Training SlotDiffusion + MetaSlot (requires VQ-VAE pretraining)
 
 ```bash
 # Step 1: Train VQ-VAE
@@ -90,7 +92,7 @@ python train.py \
     --ckpt_file {your_vqvae_best_ckpt.pth}
 ```
 
-### 4. Training SLATE + MetaSlot (requires VQ-VAE pretraining)
+### 3. Training SLATE + MetaSlot (requires VQ-VAE pretraining)
 
 ```bash
 # Step 1: Train VQ-VAE
@@ -103,6 +105,15 @@ python train.py \
     --data_dir ./data \
     --cfg_file ./Config/config-metaslot/slate_r_vqvae-voc.py \
     --ckpt_file {your_vqvae_best_ckpt.pth}
+```
+
+## 🔍 Eval
+
+```bash
+python eval.py \
+    --data_dir ./data \
+    --cfg_file ./Config/config-metaslot/{your_model_config.py} \
+    --ckpt_file {your_ckpt.pth}
 ```
 
 ---
