@@ -70,12 +70,12 @@ def main(args):
     metric_fn_v = MetricWrap(detach=True, **build_from_config(cfg.metric_fn_v))
 
     # --- prepare save dir ---
-    save_dir = Path(args.save_dir)
+    save_dir = Path(args.save_dir) / cfg_file.stem   # e.g., save/dinosaur_r-coco
     save_dir.mkdir(parents=True, exist_ok=True)
 
     for cb in cfg.callback_v:
         if cb.type == "AverageLog":
-            cb.log_file = str(save_dir / f"{cfg_file.stem}_eval.txt")
+            cb.log_file = str(save_dir / "eval.txt")
     callback_v = build_from_config(cfg.callback_v)
 
     # --- pack ---
@@ -99,7 +99,7 @@ def parse_args():
     parser.add_argument("--cfg_file", type=str, required=True)
     parser.add_argument("--data_dir", type=str, required=True)
     parser.add_argument("--ckpt_file", type=str, required=True)
-    parser.add_argument("--save_dir", type=str, default="save_eval")
+    parser.add_argument("--save_dir", type=str, default="save")
     return parser.parse_args()
 
 
