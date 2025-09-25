@@ -1,10 +1,11 @@
 
 # MetaSlot: Break Through the Fixed Number of Slots in Object-Centric Learning
 
-##  Paper Link  
+## 📄 Paper  
 
 [**MetaSlot: Break Through the Fixed Number of Slots in Object-Centric Learning** — arXiv:2505.20772](https://arxiv.org/abs/2505.20772)  
 
+✅ Accepted as a **Poster Paper** at [NeurIPS 2025](https://neurips.cc/) 🎉
 ---
 <p align="center">
   <img src="imgs/model.jpg" width="600">
@@ -133,10 +134,17 @@ aggregator = MetaSlot(...)
 ## 📊 Results (Teaser)
 ![alt text](imgs/result.png)
 
+---
+
+## Acknowledgments
+
+We thank the authors of the following projects for making their code open source:
+
+- [VQ-VFM-OCL](https://github.com/Genera1Z/VQ-VFM-OCL)
 
 ---
 
-## 📄 Citation
+## Citation
 
 If you find our work useful, please cite:  
 
@@ -155,4 +163,8 @@ If you find our work useful, please cite:
 
 ## 📬 Contact
 
-For questions or collaboration, please feel free to open an issue or contact us.
+I am a master's student with research interests in representation learning and robotic manipulation.  
+
+For questions or potential collaborations, please feel free to open an issue or reach out via email:  
+
+📧 hongjia.liu@aalto.fi
