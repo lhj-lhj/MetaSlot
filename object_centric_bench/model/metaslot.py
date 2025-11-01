@@ -89,6 +89,7 @@ class MetaSlot(nn.Module):
         query: in shape (b,n,c)
         smask: slots' mask, shape=(b,n), dtype=bool
         """
+
         self_num_iter = num_iter or self.num_iter
         kv = self.norm1kv(input)
         if self.if_noise is False:
@@ -98,14 +99,15 @@ class MetaSlot(nn.Module):
         q_d = query.detach()
         
         for i in range(self_num_iter):
-            if self.if_noise:
+            if self.if_noise and self.training:
                 k,v = self.noisy(kv, i, self_num_iter)
+
             q_d, a = self.step(q_d, k, v, smask)
         
         q_vq, zidx = self.vq.codebook(q_d.detach())
         
         self.clust_prob = pt.clamp(self.clust_prob * 1.001, max=1)
-        if np.random.random() > self.clust_prob or self.if_mask is False:
+        if self.training and (np.random.random() > self.clust_prob or self.if_mask is False):
             smask = None
             if self.if_proto:
                 q_d = q_vq
@@ -116,7 +118,7 @@ class MetaSlot(nn.Module):
                 q_d, smask = self.from_slots_get_initial_slots(q_d, zidx)
                 
         for i in range(self_num_iter):
-            if self.if_noise:
+            if self.if_noise and self.training:
                 k,v = self.noisy(kv, i, self_num_iter)
             if i + 1 == self_num_iter:
                 q = q_d + query - query.detach()
@@ -124,12 +126,18 @@ class MetaSlot(nn.Module):
             else:
                 q_d, a = self.step(q_d, k, v, smask)
 
-        slots_vq_2, zidx_slots_2 = self.vq.update_codebook(q.detach(), smask=smask)
+        if self.training:
+            slots_vq_2, zidx_slots_2 = self.vq.update_codebook(q.detach(), smask=smask)
         
         if self.if_downstream:
+            if smask is None:
+                smask = pt.ones(q.size(0), q.size(1), dtype=pt.bool, device=q.device)
+
             fidx = zidx.clone()
             fidx[~smask] = -1
+
             return q, a, fidx
+        
         else:
             return q, a
             
@@ -555,33 +563,6 @@ class VQ(nn.Module):
 
         return ste, zidx.view(b, c)
 
-
-    
-    # def _update_buffer(self, new_latents, new_idx):
-    #     """
-    #     new_latents: [N, embed_dim]，其中 N = b*c
-    #     """
-    #     N = new_latents.size(0)
-    #     ptr = int(self.buffer_ptr.item())
-    #     # 如果当前剩余空间足够，直接写入
-    #     if ptr + N <= self.buffer_capacity:
-    #         self.latent_buffer[ptr:ptr+N] = new_latents
-    #         self.idx_buffer[ptr:ptr+N] = new_idx
-    #         new_ptr = ptr + N
-    #     else:
-    #         # 剩余空间不足，需要先填满剩余，再从头覆盖
-    #         tail = self.buffer_capacity - ptr
-    #         if tail > 0:
-    #             self.latent_buffer[ptr:self.buffer_capacity] = new_latents[:tail]
-    #         remaining = N - tail
-    #         self.latent_buffer[0:remaining] = new_latents[tail:]
-    #         new_ptr = remaining
-
-    #     if new_ptr == self.buffer_capacity:
-    #         new_ptr = 0
-
-    #     self.buffer_ptr.fill_(new_ptr)
-        
     def _update_buffer(self, new_latents, new_idx):
         """
         new_latents: [N, embed_dim]
