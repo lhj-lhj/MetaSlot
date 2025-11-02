@@ -13,7 +13,7 @@ class MetaSlot(nn.Module):
     def __init__(
         self, num_iter, embed_dim, ffn_dim, dropout=0, kv_dim=None, trunc_bp=None, codebook_size = 512, \
             clust_prob: float = 0.02, buffer_capacity = 672, vq_std=1.0, vq_type='kmeans', \
-            if_noise = True, if_mask = True, if_proto = True, if_downstream = False, timeout = 4096
+            if_mask = True, if_proto = True, timeout = 4096
     ):
         """
         - dropout: only works in self.ffn; a bit is beneficial
@@ -33,14 +33,12 @@ class MetaSlot(nn.Module):
         self.norm2 = nn.LayerNorm(embed_dim)
         self.ffn = MLP(embed_dim, [ffn_dim, embed_dim], None, dropout)
         self.vq_type = vq_type
-        self.if_downstream = if_downstream
         
         if vq_type=='kmeans':
             self.vq = VQ(codebook_size = codebook_size, embed_dim=embed_dim, buffer_capacity = buffer_capacity, timeout=timeout)
             
         self.register_buffer("clust_prob", pt.tensor(clust_prob, dtype=pt.float))
         self.if_mask = if_mask
-        self.if_noise = if_noise
         self.if_proto = if_proto
         
     def step(self, q, k, v, smask = None):
@@ -92,25 +90,26 @@ class MetaSlot(nn.Module):
 
         self_num_iter = num_iter or self.num_iter
         kv = self.norm1kv(input)
-        if self.if_noise is False:
-            k = self.proj_k(kv)
-            v = self.proj_v(kv)
+        
+        k = self.proj_k(kv)
+        v = self.proj_v(kv)
             
         q_d = query.detach()
         
         for i in range(self_num_iter):
-            if self.if_noise and self.training:
-                k,v = self.noisy(kv, i, self_num_iter)
+            if self.training:
+                k, v = self.noisy(kv, i, self_num_iter)
 
             q_d, a = self.step(q_d, k, v, smask)
         
         q_vq, zidx = self.vq.codebook(q_d.detach())
         
-        self.clust_prob = pt.clamp(self.clust_prob * 1.001, max=1)
-        if self.training and (np.random.random() > self.clust_prob or self.if_mask is False):
-            smask = None
-            if self.if_proto:
-                q_d = q_vq
+        if self.training:
+            self.clust_prob = pt.clamp(self.clust_prob * 1.001, max=1)
+            if np.random.random() > self.clust_prob or self.if_mask is False:
+                smask = None
+                if self.if_proto:
+                    q_d = q_vq
         else:
             if self.if_proto:
                 q_d, smask = self.from_slots_get_initial_slots(q_vq, zidx)
@@ -118,11 +117,13 @@ class MetaSlot(nn.Module):
                 q_d, smask = self.from_slots_get_initial_slots(q_d, zidx)
                 
         for i in range(self_num_iter):
-            if self.if_noise and self.training:
-                k,v = self.noisy(kv, i, self_num_iter)
+            if self.training:
+                k, v = self.noisy(kv, i, self_num_iter)
+
             if i + 1 == self_num_iter:
                 q = q_d + query - query.detach()
                 q, a = self.step(q, k, v, smask)
+
             else:
                 q_d, a = self.step(q_d, k, v, smask)
 
