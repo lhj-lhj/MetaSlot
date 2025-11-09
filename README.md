@@ -132,6 +132,9 @@ aggregator = MetaSlot(...)
 ---
 
 ## 📊 Results (Teaser)
+The checkpoint for MetaSlot-DINOSAUR on the MS COCO dataset can be downloaded [here](https://drive.google.com/file/d/1dt3zt5yppH7r1FD0576k8fQHj2X2t35E/view?usp=sharing).
+
+
 ![alt text](imgs/result.png)
 
 ---
