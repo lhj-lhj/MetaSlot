@@ -222,9 +222,6 @@ class Codebook(nn.Module):
             self.cluster_flag = pt.zeros([], dtype=pt.bool, device=latent.device)
         if self.cluster_flag:
             return
-        # 在 PyTorch 中，每个 torch.Tensor（包括模型参数）都有 .data 属性，
-        # 它直接指向该张量的原始数据，不经过自动求导（autograd）机制。
-        # [...] 是一种切片操作，表示“所有元素”。
         self.cluster_flag.data[...] = True
         # latent = latent.permute(0, 2, 3, 1).flatten(0, -2)  # (b,h,w,c) -> (b*h*w,c)
         latent = latent.view(-1, self.embed_dim)
@@ -676,20 +673,7 @@ class VectorQuantizerEMA(nn.Module):
         encoding_indices = pt.argmin(distances, dim=1)
         # 得到量化后的向量 [B*N, embedding_dim]
         quantized = self.embedding(encoding_indices)
-
-        # ==============================
-        # 1) 计算承诺损失
-        # ==============================
-        # 对量化向量做 stop-gradient，避免更新到代码本
-        # 只让编码器的输出 x 去贴近 e (quantized.detach())
         commitment_loss = ptnf.mse_loss(flat_x, quantized.detach())
-
-        # ==============================
-        # 2) 直通估计（Straight-Through）
-        # ==============================
-        # 在前向过程中，用 quantized 代替 x，
-        # 但反向传播时，对 quantized 的梯度设为 x 的梯度 (相当于把梯度"穿透"给编码器)。
-        # 这样就能训练编码器，而不会训练代码本。
         quantized_st = flat_x + (quantized - flat_x).detach()
         quantized_st = quantized_st.view_as(x)
 
