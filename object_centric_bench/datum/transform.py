@@ -545,8 +545,7 @@ class RandomCrop:
             scale_factor = min(h0, w0) ** 2 / (h0 * w0)  # re-scale
             scale2 = [_ * scale_factor for _ in self.scale]
             self.random_crop = ptvt2.RandomResizedCrop([1, 1], scale2, self.ratio)
-        # params = self.random_crop.make_params(image)
-        params = self.random_crop._get_params(image)
+        params = self.random_crop.make_params(image)
         t, l, h, w = [params[_] for _ in ["top", "left", "height", "width"]]
         for key in self.keys:
             input = DictTool.getattr(pack, key)
